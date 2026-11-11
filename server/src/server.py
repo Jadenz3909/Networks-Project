@@ -1,6 +1,10 @@
-import socket
-import threading
+import socket, threading, os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+HOST = os.getenv("HOST")
+PORT = os.getenv("PORT")
 
 def handle_client(conn, addr):
     try:
@@ -10,9 +14,6 @@ def handle_client(conn, addr):
 
 
 def main() -> None:
-    HOST = "23.128.112.0"
-    PORT = "5678"
-
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _socket:
         _socket.bind((HOST, PORT))
         _socket.listen()

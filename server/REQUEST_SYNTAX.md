@@ -8,7 +8,11 @@ tuple[username: str, password: str]
 ```python
 tuple[Literal["upload"], file_name: str, file_size_bytes: int, directory: str]
 ```
+> Server responds with code **100** if ready or **404** if directory does not exist
+> If /directory/file_name already exists, server will return **300**; If client responds true, proceed as normal, else halt
 > Next **file_size_bytes** bytes received will be put into /directory/file_name
+> Upon completion, the client should send the hash of the file
+> If server file hash matches client hash, server will return **201**
 
 ## Download file
 ```python
