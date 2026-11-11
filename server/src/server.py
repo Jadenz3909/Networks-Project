@@ -3,8 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-HOST = os.getenv("HOST")
-PORT = os.getenv("PORT")
+HOST = os.getenv("SERVER_HOST")
+PORT = os.getenv("SERVER_PORT")
 
 def handle_client(conn, addr):
     try:
