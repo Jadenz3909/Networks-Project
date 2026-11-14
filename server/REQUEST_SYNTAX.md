@@ -5,7 +5,9 @@
     "password": str,
 }
 ```
-> Need to discuss how password encryption will work, will we use hashing?
+> Client sends username and password
+> If auth is successful server responds **200**
+> If auth is unsuccessful server responds **401** and closes connection
 
 ## Upload file
 ```py
