@@ -1,35 +1,68 @@
 ## Connect to server
 ```python
-tuple[username: str, password: str]
+{
+    "username": str, 
+    "password": str,
+}
 ```
 > Need to discuss how password encryption will work, will we use hashing?
 
 ## Upload file
-```python
-tuple[Literal["upload"], file_name: str, file_size_bytes: int, directory: str]
+```py
+{
+    "cmd": "upload", 
+    "file_name": str, 
+    "file_size_bytes": int, 
+    "dir": "/path/to/dir",
+}
 ```
-> Server responds with code **100** if ready or **404** if directory does not exist
+> Server responds with code **404** if directory does not exist
 > If /directory/file_name already exists, server will return **300**; If client responds true, proceed as normal, else halt
-> Next **file_size_bytes** bytes received will be put into /directory/file_name
+> Server responds **100** if ready
+> Next **file_size_bytes** bytes received will be put into /dir/file_name
 > Upon completion, the client should send the hash of the file
 > If server file hash matches client hash, server will return **201**
+> If server file hash does not match client hash, server will return **422**
 
 ## Download file
-```python
-tuple[Literal["download"], file_path: str]
+```py
+{
+    "cmd": "download",
+    "file_path": "/path/to/file",
+} 
 ```
+> If file does not exist server will return **404**
+> Server will respond with the number of bytes, wait for a **200** response from client, and send the data
 
 ## Delete file
-```python
-tuple[Literal["delete"], file_path: str]
+```py
+{
+    "cmd": "delete", 
+    "file_path": "/path/to/file",
+}
 ```
+> If file does not exist server will return **404**
+> Server will respond with **200** if deletion succeeds
 
 ## View directory contents
-```python
-tuple[Literal["dir"], directory: str]
+```py
+{
+    "cmd": "dir",
+    "dir": "/path/to/dir",
+}
 ```
+> If dir does not exist server will return **404**
+> Server will respond with **200** and a list of directory contents if dir exists
 
 ## Create directory
-```python
-tuple[Literal["subfolder"], subfolder_name: str, directory: str]
+```py
+{
+    "cmd": "subfolder",
+    "action": Literal["create", "delete"],
+    "subfolder_name": "subfoldername",
+    "dir": "/path/to/dir",
+}
 ```
+> If action is create and /dir/subfolder_name already exists server will respond **404**
+> If action is delete and /dir/subfolder_name does not exist server will respond **404**
+> Else server responds **200**
