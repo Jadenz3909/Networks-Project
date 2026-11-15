@@ -241,7 +241,41 @@ def handle_send(conn: socket.socket, addr: tuple, input_: dict) -> bool:
 
 
 def handle_delete(conn: socket.socket, addr: tuple, input_: dict) -> bool:
-    return True # placeholder
+    try:
+        if not input_.get("file_path"):
+            logging.warning(f"delete cmd: invalid arguments {addr = }")
+            conn.sendall(b"400")
+            return True
+        if not isinstance(input_["file_path"], str):
+            logging.warning(f"one or more invalid input types")
+            conn.sendall(b"400")
+            return True
+        try:
+            path = safe_path(input_["file_path"])
+        except ValueError:
+            logging.warning(f"unsafe path detected")
+            conn.sendall(b"400")
+            return True
+        if not path.is_file():
+            logging.warning(f"file at {path = } does not exist")
+            conn.sendall(b"404")
+            return True
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            logging.warning(f"file at {path = } disappeared before deletion")
+            conn.sendall(b"404")
+            return True
+        except OSError:
+            logging.exception(f"could not delete file at {path = }")
+            conn.sendall(b"500")
+            return True
+        logging.info(f"removed file at {path = }")
+        conn.sendall(b"200")
+        return True
+    except OSError:
+            logging.warning(f"client connection terminated {addr = }")
+            return False
 
 
 def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
