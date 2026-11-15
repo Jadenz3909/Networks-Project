@@ -123,7 +123,7 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
 
 def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
     try:
-        if not (input_.get("file_name") and input_.get("file_size_bytes") and input_.get("dir")):
+        if not (input_.get("file_name") and input_.get("file_size_bytes") and input_.get("dir", None) is not None):
             logging.warning(f"upload cmd: invalid arguments {addr = }")
             conn.sendall(b"400")
             return True
@@ -194,7 +194,7 @@ def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
 
 def handle_send(conn: socket.socket, addr: tuple, input_: dict) -> bool:
     try:
-        if not input_.get("file_path"):
+        if input_.get("file_path", None) is None:
             logging.warning(f"download cmd: invalid arguments {addr = }")
             conn.sendall(b"400")
             return True
@@ -279,8 +279,44 @@ def handle_delete(conn: socket.socket, addr: tuple, input_: dict) -> bool:
 
 
 def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
-    return True # placeholder
-
+    try:
+        if input_.get("dir", None) is None:
+            logging.warning(f"dir cmd: invalid arguments {addr = }")
+            conn.sendall(b"400")
+            return True
+        if not isinstance(input_["dir"], str):
+            logging.warning(f"one or more invalid input types")
+            conn.sendall(b"400")
+            return True
+        try:
+            path = safe_path(input_["dir"])
+        except ValueError:
+            logging.warning(f"unsafe path detected")
+            conn.sendall(b"400")
+            return True
+        if not path.is_dir():
+            logging.warning(f"directory {path = } does not exist")
+            conn.sendall(b"404")
+            return True
+        try:
+            children = {}
+            for item in path.iterdir():
+                if item.is_file():
+                    children[item.name] = "f"
+                elif item.is_dir():
+                    children[item.name] = "d"
+        except OSError:
+            logging.exception(f"could not list {path = }")
+            conn.sendall(b"500")
+            return True
+        rval = ("200" + json.dumps(children) + "\n").encode()
+        conn.sendall(rval)
+        logging.info(f"sent {path = } contents to {addr = }")
+        return True
+    except OSError:
+        logging.warning(f"client connection terminated {addr = }")
+        return False
+        
 
 def rm_subfolder(path: Path) -> None:
     pass
@@ -305,8 +341,15 @@ def handle_client(conn: socket.socket, addr: tuple):
                 break
             data += buf
             if data.endswith(b"\n"):
-                parsed = json.loads(data)
+                try:
+                    parsed = json.loads(data)
+                except json.JSONDecodeError:
+                    parsed = None
                 data = b""
+                if not isinstance(parsed, dict):
+                    logging.warning(f"invalid input from client {addr = }")
+                    conn.sendall(b"400")
+                    continue
                 if not parsed.get("cmd"):
                     logging.warning(f"invalid input from client {addr = }")
                     conn.sendall(b"400")
@@ -319,23 +362,23 @@ def handle_client(conn: socket.socket, addr: tuple):
                     case "upload":
                         if not handle_recv(conn, addr, parsed):
                             return
-                        break
+                        continue
                     case "download":
                         if not handle_send(conn, addr, parsed):
                             return
-                        break
+                        continue
                     case "delete":
                         if not handle_delete(conn, addr, parsed):
                             return
-                        break
+                        continue
                     case "dir":
                         if not handle_ls(conn, addr, parsed):
                             return
-                        break
+                        continue
                     case "subfolder":
                         if not handle_subfolder(conn, addr, parsed):
                             return
-                        break
+                        continue
                     case _:
                         logging.warning(f"invalid cmd = '{parsed["cmd"]}' from client {addr = }")
                         conn.sendall(b"400")
