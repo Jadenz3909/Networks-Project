@@ -123,12 +123,17 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
 
 def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
     try:
-        if not (input_.get("file_name") and input_.get("file_size_bytes") and input_.get("dir", None) is not None):
+        if not (input_.get("file_name") and input_.get("file_size_bytes") is not None and input_.get("dir", None) is not None):
             logging.warning(f"upload cmd: invalid arguments {addr = }")
             conn.sendall(b"400")
             return True
         if not (isinstance(input_["file_name"], str) and isinstance(input_["file_size_bytes"], int) and isinstance(input_["dir"], str)):
             logging.warning(f"one or more invalid input types")
+            conn.sendall(b"400")
+            return True
+        size = input_["file_size_bytes"]
+        if isinstance(size, bool) or not 0 <= size:
+            logging.warning(f"invalid file {size = }")
             conn.sendall(b"400")
             return True
         for invalid_char in r'\/:*?"<>|':
@@ -274,8 +279,8 @@ def handle_delete(conn: socket.socket, addr: tuple, input_: dict) -> bool:
         conn.sendall(b"200")
         return True
     except OSError:
-            logging.warning(f"client connection terminated {addr = }")
-            return False
+        logging.warning(f"client connection terminated {addr = }")
+        return False
 
 
 def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
