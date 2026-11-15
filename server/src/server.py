@@ -52,7 +52,7 @@ def authenticate_user(args: dict) -> bool:
 def handle_auth(conn: socket.socket, addr: tuple) -> bool:
     try:
         conn.settimeout(5)
-        logging.info(f"Client connected on {addr}")
+        logging.info(f"client connected on {addr}")
         try:
             buf = conn.recv(4096)
         except socket.timeout:
@@ -74,7 +74,7 @@ def handle_auth(conn: socket.socket, addr: tuple) -> bool:
             return False
         conn.settimeout(None)
         conn.sendall(b"200")
-        logging.info(f"Client authenticated successfully on user {client_data["username"]} {addr = }")
+        logging.info(f"client authenticated successfully on user {client_data["username"]} {addr = }")
     except OSError:
         logging.warning(f"client connection terminated {addr = }")
         return False
@@ -106,7 +106,7 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
             return True
         os.replace(tmp_path, file_path)
         upload_success = True
-        logging.info("data received successfully")
+        logging.info("file received successfully")
         conn.sendall(b"201")
         return True
     except socket.timeout:
@@ -169,14 +169,96 @@ def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
                 logging.warning("invalid response")
                 return False
             if not response.get("overwrite") is True:
-                conn.sendall(b"204")
                 logging.info(f"overwrite declined")
+                conn.sendall(b"204")
                 return True
         conn.sendall(b"100")
         return receive_file(conn, addr, path / input_["file_name"], input_["file_size_bytes"])
     except OSError:
         logging.warning(f"client connection terminated {addr = }")
         return False
+
+
+def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
+    try:
+        with open(path, "rb") as file:
+            conn.sendfile(file)
+            file.seek(0)
+            digest = hashlib.file_digest(file, "sha256").hexdigest().encode()
+        conn.sendall(digest)
+        return True
+    except OSError:
+        logging.warning(f"client connection terminated {addr = }")
+        return False
+
+
+def handle_send(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    try:
+        if not input_.get("file_path"):
+            logging.warning(f"download cmd: invalid arguments {addr = }")
+            conn.sendall(b"400")
+            return True
+        if not isinstance(input_["file_path"], str):
+            logging.warning(f"one or more invalid input types")
+            conn.sendall(b"400")
+            return True
+        try:
+            path = safe_path(input_["file_path"])
+        except ValueError:
+            logging.warning(f"unsafe path detected")
+            conn.sendall(b"400")
+            return True
+        if not path.is_file():
+            logging.warning(f"file at {path = } does not exist")
+            conn.sendall(b"404")
+            return True
+        file_size = path.stat().st_size
+        conn.sendall(b"200" + file_size.to_bytes(8, "big") + b"\n")
+        try:
+            conn.settimeout(5)
+            data = b""
+            while True:
+                buf = conn.recv(4096)
+                if buf == b"":
+                    logging.warning(f"client connection terminated {addr = }")
+                    return False
+                data += buf
+                if data.endswith(b"\n"):
+                    if data.strip() != b"200":
+                        logging.warning("client denied download")
+                        conn.sendall(b"204")
+                        return True
+                    break
+        except socket.timeout:
+            logging.warning("client timed out")
+            return False
+        finally:
+            conn.settimeout(None)
+        return send_file(conn, addr, path)
+    except OSError:
+        logging.warning(f"client connection terminated {addr = }")
+        return False
+
+
+def handle_delete(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    return True # placeholder
+
+
+def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    return True # placeholder
+
+
+def rm_subfolder(path: Path) -> None:
+    pass
+
+
+def mk_subfolder(path: Path) -> None:
+    pass
+
+
+def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    return True # placeholder
+
 
 def handle_client(conn: socket.socket, addr: tuple):
     try:
@@ -185,18 +267,52 @@ def handle_client(conn: socket.socket, addr: tuple):
         data = b""
         while True:
             buf = conn.recv(4096)
+            if buf == b"":
+                break
             data += buf
             if data.endswith(b"\n"):
                 parsed = json.loads(data)
-                if not parsed.get("cmd"):
-                    break
-                else: handle_recv(conn, addr, parsed) # temporary, always use handle_recv even if its a different cmd
                 data = b""
+                if not parsed.get("cmd"):
+                    logging.warning(f"invalid input from client {addr = }")
+                    conn.sendall(b"400")
+                    continue
+                if not isinstance(parsed["cmd"], str):
+                    logging.warning(f"invalid input from client {addr = }")
+                    conn.sendall(b"400")
+                    continue
+                match parsed["cmd"]:
+                    case "upload":
+                        if not handle_recv(conn, addr, parsed):
+                            return
+                        break
+                    case "download":
+                        if not handle_send(conn, addr, parsed):
+                            return
+                        break
+                    case "delete":
+                        if not handle_delete(conn, addr, parsed):
+                            return
+                        break
+                    case "dir":
+                        if not handle_ls(conn, addr, parsed):
+                            return
+                        break
+                    case "subfolder":
+                        if not handle_subfolder(conn, addr, parsed):
+                            return
+                        break
+                    case _:
+                        logging.warning(f"invalid cmd = '{parsed["cmd"]}' from client {addr = }")
+                        conn.sendall(b"400")
+                        continue
     finally:
+        logging.info(f"closing connection with {addr = }")
         conn.close()
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s %(message)s")
     init_filesystem()
     login_info.create_dummy_users()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _socket:

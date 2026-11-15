@@ -1,5 +1,7 @@
+# On all client to server messages, signal the end of the json message with '\n'.
+
 ## Connect to server
-```python
+```py
 {
     "username": str, 
     "password": str,
@@ -43,7 +45,9 @@
 ```
 > If file does not exist server will return **404**
 
-> Server will respond with the number of bytes, wait for a **200** response from client, and send the data
+> Server will respond with `200<number of bytes>\n`, wait for a **200** response from client, and send the data
+
+> Server will then send hexdigest to compare
 
 ## Delete file
 ```py
