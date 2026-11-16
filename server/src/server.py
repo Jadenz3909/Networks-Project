@@ -72,7 +72,7 @@ def authenticate_user(args: dict) -> bool:
         if username not in login_info.user_hash:
             hashlib.scrypt(password.encode(), salt=os.urandom(16), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P)
             return False
-        return hmac.compare_digest(login_info.user_hash[username]["hash"], hashlib.scrypt(password.encode(), salt=login_info.user_hash[username]["salt"], n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
+        return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(password.encode(), salt=login_info.user_hash[username]["salt"], n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
     except Exception: return False
 
 

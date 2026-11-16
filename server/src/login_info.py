@@ -8,6 +8,7 @@ user_hash = {}
         
         
 def load_users() -> None:
+    global user_hash
     if not USERS.is_dir():
         USERS.mkdir(parents=True, exist_ok=True)
     try:
@@ -18,6 +19,7 @@ def load_users() -> None:
     
     
 def save_users() -> None:
+    global user_hash
     if not USERS.is_dir():
         USERS.mkdir(parents=True, exist_ok=True)
     with open(USERS / ".users", "w") as file:
@@ -37,8 +39,8 @@ def create_user(username: str, password: str) -> None:
     global user_hash
     salt = os.urandom(16)
     user_hash[username] = {
-        "hash": hashlib.scrypt(password.encode(), salt=salt, n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P),
-        "salt": salt,
+        "hash": hashlib.scrypt(password.encode(), salt=salt, n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P).hex(),
+        "salt": salt.hex(),
     }
 
 
@@ -54,6 +56,7 @@ def create_dummy_users() -> None:
         
         
 def main() -> None:
+    global user_hash
     options = ["new", "rm", "ls", "edit", "exit"]
     user_input = ""
     while True:
