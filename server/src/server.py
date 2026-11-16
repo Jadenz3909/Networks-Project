@@ -291,18 +291,47 @@ def add_send_time(client_addr: tuple, start: float, end: float, byte_ct: int = 4
 
 
 def clear_send_times(client_addr: tuple) -> None:
+    """Clears the send time for the given address.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+    """
+    
     global data_sent_bytes, sent_time_seconds
     data_sent_bytes[client_addr] = 0
     sent_time_seconds[client_addr] = 0
     
     
 def calc_send_throughput(client_addr: tuple) -> float:
+    """Calculates the throughput average for the current data send operation.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        
+        
+    Returns:
+        float: the average bytes per second sent in the current operation
+    """
+    
     global data_sent_bytes, sent_time_seconds
     if data_sent_bytes.get(client_addr) is None:
         raise ValueError("client not sent anything")
     return data_sent_bytes[client_addr] / sent_time_seconds[client_addr]
 
 def get_data_sent(client_addr: tuple) -> int:
+    """Returns the total amount of data sent to the client
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        
+        
+    Returns:
+        int: number of bytes sent to client this operation
+    """
+    
     global data_sent_bytes
     return data_sent_bytes[client_addr]
 
@@ -657,7 +686,7 @@ def main() -> None:
             _socket.bind((HOST, PORT))
             _socket.listen()
             _socket.settimeout(1)
-            print(f"Server listening on {HOST}:{PORT}")
+            logging.info(f"Server listening on {HOST}:{PORT}")
             while True:
                 try:
                     conn, addr = _socket.accept()
