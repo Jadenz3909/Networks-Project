@@ -352,6 +352,10 @@ def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
             logging.warning(f"unsafe path detected")
             conn.sendall(b"400")
             return True
+        if path == ROOT:
+            logging.warning("cannot delete root")
+            conn.sendall(b"400")
+            return True
         dir_exists = path.is_dir()
         match input_["action"]:
             case "create":
