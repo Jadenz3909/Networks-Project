@@ -8,6 +8,7 @@ import time
 
 CHUNK_SIZE = 256 * 1024
 DOWNLOAD_DIR = "downloads"
+UPLOAD_CHUNK = 40000
 MB = 1_048_576
 
 ERRORS = {
@@ -158,6 +159,10 @@ def do_upload(sock, args):
             sock.sendall(chunk)
             sha.update(chunk)
 
+            if recv_code(sock) != 100:
+                print("Upload failed")
+                return
+
     # send SHA - 256 to server to make sure file is unchanged
     sock.sendall(sha.hexdigest().encode())
     code = recv_code(sock)
@@ -209,7 +214,7 @@ def do_download(sock, args):
     # compares the server encryption with ours
     server_hash = recv_exact(sock, 64).decode()
     if server_hash != sha.hexdigest():
-        sock.sendall(b"422\n")      
+        sock.sendall(b"422")      
         os.remove(local_path)
         print("Download failed: the file was damaged on the way and was not kept.")
         return
