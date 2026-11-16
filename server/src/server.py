@@ -13,6 +13,21 @@ PORT = int(os.getenv("SERVER_PORT", 5678))
 
 
 def safe_path(raw: str) -> Path:
+    """Check if a given path exits the boundaries of the ROOT folder or contains invalid characters.
+    
+    
+    Args:
+        raw (str): The path to check
+    
+        
+    Returns:
+        Path: The resolved path (removed of any ../. modifiers)
+    
+        
+    Raises:
+        ValueError: If the resolved path falls outside ROOT or if the resolved path contains invalid characters.
+    """
+    
     try:
         if not isinstance(raw, str):
             raise ValueError(f"invalid input {type(raw) = }")
@@ -29,12 +44,24 @@ def safe_path(raw: str) -> Path:
         raise ValueError("invalid name")
 
 
-def init_filesystem():
+def init_filesystem() -> None:
+    """Creates filesystem folders if they don't exist."""
     ROOT.mkdir(parents=True, exist_ok=True)
     TMP.mkdir(parents=True, exist_ok=True)
 
 
 def authenticate_user(args: dict) -> bool:
+    """Authenticate whether a user's login information is valid compared against server-side login data.
+    
+    
+    Args:
+        args (dict): A dictionary containing the user's login information {'username': 'foo', 'password': 'bar'}
+        
+        
+    Returns:
+        bool: Whether the user's login information is valid
+    """
+    
     try:
         username = args.get("username")
         password = args.get("password")
@@ -50,6 +77,18 @@ def authenticate_user(args: dict) -> bool:
 
 
 def handle_auth(conn: socket.socket, addr: tuple) -> bool:
+    """Handles client authorization on connection.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+    
     try:
         conn.settimeout(5)
         logging.info(f"client connected on {addr}")
@@ -82,6 +121,20 @@ def handle_auth(conn: socket.socket, addr: tuple) -> bool:
 
 
 def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: int) -> bool:
+    """Receive a file from a connection and store it in file_path.
+        
+        
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        file_path (Path): The path where the received file should be stored
+        file_size (int): The size of the received file in bytes
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+    
     bytes_received = 0
     upload_success = False
     tmp_path: Path | None = None
@@ -122,6 +175,19 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
         
 
 def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    """Handles requests related to receiving files from the client.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        input_ (dict): A json containing the args sent by the client
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+    
     try:
         if not (input_.get("file_name") and input_.get("file_size_bytes") is not None and input_.get("dir", None) is not None):
             logging.warning(f"upload cmd: invalid arguments {addr = }")
@@ -185,6 +251,19 @@ def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
 
 
 def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
+    """Sends a given file over a connection.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        path (Path): The path of the file to be sent
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+    
     try:
         with open(path, "rb") as file:
             conn.sendfile(file)
@@ -198,6 +277,19 @@ def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
 
 
 def handle_send(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    """Handles requests related to sending files to a client.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        input_ (dict): A json containing the args sent by the client
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+        
     try:
         if input_.get("file_path", None) is None:
             logging.warning(f"download cmd: invalid arguments {addr = }")
@@ -246,6 +338,19 @@ def handle_send(conn: socket.socket, addr: tuple, input_: dict) -> bool:
 
 
 def handle_delete(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    """Handles requests related to deleting files from the server.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        input_ (dict): A json containing the args sent by the client
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+        
     try:
         if not input_.get("file_path"):
             logging.warning(f"delete cmd: invalid arguments {addr = }")
@@ -324,6 +429,19 @@ def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
 
 
 def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
+    """Handles requests related to creating and deleting subfolders.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+        input_ (dict): A json containing the args sent by the client
+        
+    
+    Returns:
+        bool: Whether the server should keep the connection alive
+    """
+        
     try:
         if input_.get("action", None) is None or input_.get("subfolder_name", None) is None or input_.get("dir", None) is None:
             logging.warning(f"subfolder cmd: invalid arguments {addr = }")
@@ -384,7 +502,15 @@ def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
         return False
             
 
-def handle_client(conn: socket.socket, addr: tuple):
+def handle_client(conn: socket.socket, addr: tuple) -> None:
+    """Handles a client connection and automatically closes the connection when finished.
+    
+    
+    Args:
+        conn (socket.socket): The connection to the client
+        addr (tuple): The client's address
+    """
+        
     try:
         if not handle_auth(conn, addr) == True:
             return
