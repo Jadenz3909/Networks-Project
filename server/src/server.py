@@ -137,6 +137,70 @@ def handle_auth(conn: socket.socket, addr: tuple) -> bool:
     return True
 
 
+data_recv_bytes = {}
+recv_time_seconds = {}
+def add_recv_time(client_addr: tuple, start: float, end: float, byte_ct: int = 40000) -> None:
+    """Adds the receive times to the global data send variables.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        start (float): The start time of when the data was first sent
+        end (float): The time at which the bytes were received
+    """
+    
+    global data_sent_bytes, sent_time_seconds
+    data_sent_bytes[client_addr] += byte_ct
+    sent_time_seconds[client_addr] = end - start
+
+
+def clear_recv_times(client_addr: tuple) -> None:
+    """Clears the receive time for the given address.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+    """
+    
+    global data_sent_bytes, sent_time_seconds
+    data_sent_bytes[client_addr] = 0
+    sent_time_seconds[client_addr] = 0
+    
+    
+def calc_recv_throughput(client_addr: tuple) -> float:
+    """Calculates the throughput average for the current data receive operation.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        
+        
+    Returns:
+        float: the average bytes per second received in the current operation
+    """
+    
+    global data_sent_bytes, sent_time_seconds
+    if data_sent_bytes.get(client_addr) is None:
+        raise ValueError("client not sent anything")
+    return data_sent_bytes[client_addr] / sent_time_seconds[client_addr]
+
+
+def get_data_recv(client_addr: tuple) -> int:
+    """Returns the total amount of data received from the client
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        
+        
+    Returns:
+        int: number of bytes received from client this operation
+    """
+    
+    global data_sent_bytes
+    return data_sent_bytes[client_addr]
+
+
 def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: int) -> bool:
     """Receive a file from a connection and store it in file_path.
         
@@ -161,6 +225,7 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
         tmp_path = Path(tmp_name)
         local_hash = hashlib.sha256()
         with os.fdopen(fd, "wb") as file:
+            start_time = time.monotonic()
             while bytes_received < file_size:
                 try:
                     buf = recv_exact(conn, (min(40000, file_size - bytes_received)))
@@ -171,6 +236,8 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
                 local_hash.update(buf)
                 bytes_received += len(buf)
                 conn.sendall(b"100")
+                add_recv_time(addr, start_time, time.monotonic())
+                print(f"\rSend Progress: {round(get_data_recv(addr)/file_size, 1):%} Throughput: {calc_recv_throughput(addr)}", end="", flush=True)
         buf = conn.recv(40000)
         recv_hash = buf
         while buf.endswith(b"\n"):
@@ -319,6 +386,7 @@ def calc_send_throughput(client_addr: tuple) -> float:
     if data_sent_bytes.get(client_addr) is None:
         raise ValueError("client not sent anything")
     return data_sent_bytes[client_addr] / sent_time_seconds[client_addr]
+
 
 def get_data_sent(client_addr: tuple) -> int:
     """Returns the total amount of data sent to the client
