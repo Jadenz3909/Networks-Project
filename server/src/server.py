@@ -571,19 +571,23 @@ def handle_client(conn: socket.socket, addr: tuple) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s %(message)s")
     init_filesystem()
-    login_info.create_dummy_users()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _socket:
-        _socket.bind((HOST, PORT))
-        _socket.listen()
-        _socket.settimeout(1)
-        print(f"Server listening on {HOST}:{PORT}")
-        while True:
-            try:
-                conn, addr = _socket.accept()
-            except socket.timeout:
-                continue
-            threading.Thread(target=handle_client, args=(conn, addr)).start()
-
+    login_info.load_users()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _socket:
+            _socket.bind((HOST, PORT))
+            _socket.listen()
+            _socket.settimeout(1)
+            print(f"Server listening on {HOST}:{PORT}")
+            while True:
+                try:
+                    conn, addr = _socket.accept()
+                except socket.timeout:
+                    continue
+                threading.Thread(target=handle_client, args=(conn, addr)).start()
+    except KeyboardInterrupt:
+        logging.info("Closing server...")
+        exit()
+        
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,5 @@
 .venv
 .env
+.users
 __pycache__
 server/src/storage
