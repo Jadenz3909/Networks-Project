@@ -321,19 +321,64 @@ def handle_ls(conn: socket.socket, addr: tuple, input_: dict) -> bool:
     except OSError:
         logging.warning(f"client connection terminated {addr = }")
         return False
-        
-
-def rm_subfolder(path: Path) -> None:
-    pass
-
-
-def mk_subfolder(path: Path) -> None:
-    pass
 
 
 def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
-    return True # placeholder
-
+    try:
+        if input_.get("action", None) is None or input_.get("subfolder_name", None) is None or input_.get("dir", None) is None:
+            logging.warning(f"subfolder cmd: invalid arguments {addr = }")
+            conn.sendall(b"400")
+            return True
+        if not isinstance(input_["action"], str) or not isinstance(input_["subfolder_name"], str) or not isinstance(input_["dir"], str):
+            logging.warning(f"one or more invalid input types")
+            conn.sendall(b"400")
+            return True
+        if input_["action"] not in ["create", "delete"]:
+            logging.warning(f"invalid action = {input_["action"]}")
+            conn.sendall(b"400")
+            return True
+        for invalid_char in r'\/:*?"<>|':
+            if invalid_char in input_["subfolder_name"]:
+                logging.warning(f"invalid character in subfolder name {invalid_char = }")
+                conn.sendall(b"400")
+                return True
+        if input_["subfolder_name"] in ["..", ".", ""] or "\x00" in input_["subfolder_name"]:
+            logging.warning(f"invalid subfolder name = {input_["subfolder_name"]}")
+            conn.sendall(b"400")
+            return True
+        try:
+            path = safe_path(input_["subfolder_name"]) / input_["subfolder_name"]
+        except ValueError:
+            logging.warning(f"unsafe path detected")
+            conn.sendall(b"400")
+            return True
+        dir_exists = path.is_dir()
+        match input_["action"]:
+            case "create":
+                if dir_exists:
+                    logging.warning(f"subfolder already exists at {path = }")
+                    conn.sendall(b"400")
+                    return True
+                os.mkdir(path)
+                logging.info(f"subfolder created at {path = }")
+                conn.sendall(b"200")
+                return True
+            case "delete":
+                if not dir_exists:
+                    logging.warning(f"subfolder does not exist at {path = }")
+                    conn.sendall(b"404")
+                os.remove(path)
+                logging.info(f"subfolder deleted at {path = }")
+                conn.sendall(b"200")
+                return True
+            case _:
+                logging.exception("an unexpected error occured")
+                conn.sendall(b"500")
+                return True
+    except OSError:
+        logging.warning(f"client connection terminated {addr = }")
+        return False
+            
 
 def handle_client(conn: socket.socket, addr: tuple):
     try:
