@@ -577,11 +577,14 @@ def handle_client(conn: socket.socket, addr: tuple) -> None:
         addr (tuple): The client's address
     """
         
+    global shutdown_event
     try:
         if not handle_auth(conn, addr) == True:
             return
         data = b""
         while True:
+            if shutdown_event.is_set():
+                return
             conn.settimeout(None)
             buf = conn.recv(4096)
             if buf == b"":
@@ -640,10 +643,15 @@ def handle_client(conn: socket.socket, addr: tuple) -> None:
         conn.close()
 
 
+shutdown_event = threading.Event()
+
+
 def main() -> None:
+    global shutdown_event
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s %(message)s")
     init_filesystem()
     login_info.load_users()
+    threads: list[threading.Thread] = []
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _socket:
             _socket.bind((HOST, PORT))
@@ -655,9 +663,14 @@ def main() -> None:
                     conn, addr = _socket.accept()
                 except socket.timeout:
                     continue
-                threading.Thread(target=handle_client, args=(conn, addr)).start()
+                client_conn = threading.Thread(target=handle_client, args=(conn, addr))
+                threads.append(client_conn)
+                client_conn.start()
     except KeyboardInterrupt:
         logging.info("Closing server...")
+        shutdown_event.set()
+        for t in threads:
+            t.join()
         exit()
         
 
