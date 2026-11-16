@@ -1,4 +1,4 @@
-import socket, threading, os, hashlib, hmac, json, logging, tempfile, login_info
+import socket, threading, os, hashlib, hmac, json, logging, tempfile, time, login_info
 from pathlib import Path
 from login_info import SCRYPT_PARAMS
 from dotenv import load_dotenv
@@ -10,6 +10,17 @@ ROOT = (BASE / "root").resolve()
 TMP = (BASE / "tmp").resolve()
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = int(os.getenv("SERVER_PORT", 5678))
+
+
+def recv_exact(conn: socket.socket, n: int) -> bytes:
+    buf = bytearray(n)
+    view = memoryview(buf)
+    bytes_read = 0
+    while bytes_read < 3:
+        received = conn.recv_into(view[bytes_read:])
+        if received == 0:
+            raise OSError
+    return bytes(buf)
 
 
 def safe_path(raw: str) -> Path:
@@ -66,14 +77,20 @@ def authenticate_user(args: dict) -> bool:
         username = args.get("username")
         password = args.get("password")
         if not username or not password:
+            logging.warning("username or password field messed up")
             return False
         if not (isinstance(username, str) and isinstance(password, str)):
+            logging.warning(f"{username = } {password = }")
             return False
         if username not in login_info.user_hash:
+            logging.warning(f"{username = } {password = }")
             hashlib.scrypt(password.encode(), salt=os.urandom(16), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P)
             return False
-        return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(password.encode(), salt=login_info.user_hash[username]["salt"], n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
-    except Exception: return False
+        logging.warning(f"{username = } {password = }")
+        return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(password.encode(), salt=bytes.fromhex(login_info.user_hash[username]["salt"]), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
+    except Exception as e: 
+        logging.warning(e)
+        return False
 
 
 def handle_auth(conn: socket.socket, addr: tuple) -> bool:
@@ -142,18 +159,24 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
     try:
         fd, tmp_name = tempfile.mkstemp(suffix=".tmp", prefix=".upload_", dir=TMP)
         tmp_path = Path(tmp_name)
-        hash = hashlib.sha256()
+        local_hash = hashlib.sha256()
         with os.fdopen(fd, "wb") as file:
             while bytes_received < file_size:
-                buf = conn.recv(min(4096, file_size - bytes_received))
-                if buf == b"":
+                try:
+                    buf = recv_exact(conn, (min(40000, file_size - bytes_received)))
+                except OSError:
                     logging.warning(f"client connection terminated")
                     return False
                 file.write(buf)
-                hash.update(buf)
+                local_hash.update(buf)
                 bytes_received += len(buf)
-        buf = conn.recv(4096)
-        if not hmac.compare_digest(buf.strip(), hash.hexdigest().encode()):
+                conn.sendall(b"100")
+        buf = conn.recv(40000)
+        recv_hash = buf
+        while buf.endswith(b"\n"):
+            buf = conn.recv(40000)
+            recv_hash += buf
+        if not hmac.compare_digest(recv_hash.strip(), local_hash.hexdigest().encode()):
             logging.warning("digest compare failed for uploaded file")
             conn.sendall(b"422")
             return True
@@ -250,6 +273,40 @@ def handle_recv(conn: socket.socket, addr: tuple, input_: dict) -> bool:
         return False
 
 
+data_sent_bytes = {}
+sent_time_seconds = {}
+def add_send_time(client_addr: tuple, start: float, end: float, byte_ct: int = 40000) -> None:
+    """Adds the send times to the global data send variables.
+    
+    
+    Args:
+        client_addr (tuple): The client's address
+        start (float): The start time of when the data began sending
+        end (float): The time at which the bytes were confirmed received by the client
+    """
+    
+    global data_sent_bytes, sent_time_seconds
+    data_sent_bytes[client_addr] += byte_ct
+    sent_time_seconds[client_addr] = end - start
+
+
+def clear_send_times(client_addr: tuple) -> None:
+    global data_sent_bytes, sent_time_seconds
+    data_sent_bytes[client_addr] = 0
+    sent_time_seconds[client_addr] = 0
+    
+    
+def calc_send_throughput(client_addr: tuple) -> float:
+    global data_sent_bytes, sent_time_seconds
+    if data_sent_bytes.get(client_addr) is None:
+        raise ValueError("client not sent anything")
+    return data_sent_bytes[client_addr] / sent_time_seconds[client_addr]
+
+def get_data_sent(client_addr: tuple) -> int:
+    global data_sent_bytes
+    return data_sent_bytes[client_addr]
+
+
 def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
     """Sends a given file over a connection.
     
@@ -265,11 +322,20 @@ def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
     """
     
     try:
+        logging.info(f"sending file at {path = } to client {addr = }")
         with open(path, "rb") as file:
             conn.sendfile(file)
             file.seek(0)
             digest = hashlib.file_digest(file, "sha256").hexdigest().encode()
         conn.sendall(digest)
+        clear_send_times(addr)
+        start_time = time.monotonic()
+        while (code := recv_exact(conn, 3)) == b"100":
+            add_send_time(addr, start_time, time.monotonic())
+            print(f"\rSend Progress: {round(get_data_sent(addr)/path.stat().st_size, 1):%} Throughput: {calc_send_throughput(addr)}", end="", flush=True)
+        if code != b"200":
+            logging.warning("file send failed")
+        else: logging.info(f"sent file at {path = } to client {addr = }")
         return True
     except OSError:
         logging.warning(f"client connection terminated {addr = }")
@@ -465,7 +531,7 @@ def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
             conn.sendall(b"400")
             return True
         try:
-            path = safe_path(input_["subfolder_name"]) / input_["subfolder_name"]
+            path = safe_path(input_["dir"]) / input_["subfolder_name"]
         except ValueError:
             logging.warning(f"unsafe path detected")
             conn.sendall(b"400")
@@ -489,7 +555,7 @@ def handle_subfolder(conn: socket.socket, addr: tuple, input_: dict) -> bool:
                 if not dir_exists:
                     logging.warning(f"subfolder does not exist at {path = }")
                     conn.sendall(b"404")
-                os.remove(path)
+                os.rmdir(path)
                 logging.info(f"subfolder deleted at {path = }")
                 conn.sendall(b"200")
                 return True
@@ -516,6 +582,7 @@ def handle_client(conn: socket.socket, addr: tuple) -> None:
             return
         data = b""
         while True:
+            conn.settimeout(None)
             buf = conn.recv(4096)
             if buf == b"":
                 break
@@ -540,22 +607,27 @@ def handle_client(conn: socket.socket, addr: tuple) -> None:
                     continue
                 match parsed["cmd"]:
                     case "upload":
+                        logging.info(f"received command upload from {addr = }")
                         if not handle_recv(conn, addr, parsed):
                             return
                         continue
                     case "download":
+                        logging.info(f"received command download from {addr = }")
                         if not handle_send(conn, addr, parsed):
                             return
                         continue
                     case "delete":
+                        logging.info(f"received command delete from {addr = }")
                         if not handle_delete(conn, addr, parsed):
                             return
                         continue
                     case "dir":
+                        logging.info(f"received command dir from {addr = }")
                         if not handle_ls(conn, addr, parsed):
                             return
                         continue
                     case "subfolder":
+                        logging.info(f"received command subfolder from {addr = }")
                         if not handle_subfolder(conn, addr, parsed):
                             return
                         continue
