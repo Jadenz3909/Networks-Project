@@ -153,7 +153,7 @@ def do_upload(sock, args):
     start = time.perf_counter()
     with open(local_path, "rb") as f:
         while True:
-            chunk = f.read(CHUNK_SIZE)
+            chunk = f.read(UPLOAD_CHUNK)
             if not chunk:
                 break
             sock.sendall(chunk)
@@ -200,16 +200,25 @@ def do_download(sock, args):
     local_path = os.path.join(DOWNLOAD_DIR, name)
     sha = hashlib.sha256()
     received = 0
+    shown = -1
     start = time.perf_counter()
     with open(local_path, "wb") as f:
         while received < size:
-            chunk = sock.recv(min(CHUNK_SIZE, size - received))
+            chunk = sock.recv(min(UPLOAD_CHUNK, size - received))
             if not chunk:
                 raise ConnectionError("the server closed the connection")
             f.write(chunk)
             sha.update(chunk)
             received += len(chunk)
+            sock.sendall(b"100")
+
+            percent = received * 100 // size
+            if percent != shown:
+                print(f"\rDownloading: {percent}%",end="", flush=True)
+                shown = percent
+    
     seconds = time.perf_counter() - start
+    print()
 
     # compares the server encryption with ours
     server_hash = recv_exact(sock, 64).decode()
@@ -236,6 +245,7 @@ COMMANDS = {
 def main():
     sock = None
     while True:
+        show_commands()
         line = input("> ").strip()
         if not line:
             continue
@@ -260,6 +270,16 @@ def main():
     if sock:
         sock.close()
 
+
+def show_commands():
+    print()
+    print("Commands Available:")
+    print(" connect (ip) (ports)")
+    print(" dir (path)")
+    print(" upload (local dir) (server dir)")
+    print(" download (path file name)")
+    print(" subfolder (create || delete) (path)")
+    print(" quit")
 
 if __name__ == "__main__":
     main()
