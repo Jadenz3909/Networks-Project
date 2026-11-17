@@ -153,7 +153,7 @@ def do_upload(sock, args):
     start = time.perf_counter()
     with open(local_path, "rb") as f:
         while True:
-            chunk = f.read(CHUNK_SIZE)
+            chunk = f.read(UPLOAD_CHUNK)
             if not chunk:
                 break
             sock.sendall(chunk)
