@@ -200,6 +200,7 @@ def do_download(sock, args):
     local_path = os.path.join(DOWNLOAD_DIR, name)
     sha = hashlib.sha256()
     received = 0
+    shown = -1
     start = time.perf_counter()
     with open(local_path, "wb") as f:
         while received < size:
@@ -209,7 +210,14 @@ def do_download(sock, args):
             f.write(chunk)
             sha.update(chunk)
             received += len(chunk)
+
+            percent = received * 100 // size
+            if percent != shown:
+                print(f"\rDownloading: {percent}%",end="", flush=True)
+                shown = percent
+    
     seconds = time.perf_counter() - start
+    print()
 
     # compares the server encryption with ours
     server_hash = recv_exact(sock, 64).decode()
