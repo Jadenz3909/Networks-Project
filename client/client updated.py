@@ -270,5 +270,15 @@ def main():
         sock.close()
 
 
+def show_commands():
+    print()
+    print("Commands Available:")
+    print(" connect (ip) (ports)")
+    print(" dir (path)")
+    print(" upload (local dir) (server dir)")
+    print(" download (path file name)")
+    print(" subfolder (create || delete) (path)")
+    print(" quit")
+
 if __name__ == "__main__":
     main()
