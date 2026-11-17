@@ -1,4 +1,6 @@
-import socket, threading, os, hashlib, hmac, json, logging, tempfile, time, login_info
+import socket, threading, os, hashlib, hmac, json, logging, tempfile, time, base64, login_info
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from pathlib import Path
 from login_info import SCRYPT_PARAMS
 from dotenv import load_dotenv
@@ -10,6 +12,25 @@ ROOT = (BASE / "root").resolve()
 TMP = (BASE / "tmp").resolve()
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = int(os.getenv("SERVER_PORT", 5678))
+
+
+with open("private_key.pem", "rb") as f:
+    loaded = serialization.load_pem_private_key(f.read(), password=None)
+if not isinstance(loaded, rsa.RSAPrivateKey):
+    raise TypeError("private_key.pem is not an RSA private key")
+private_key = loaded
+
+
+def decrypt(encrypted: str) -> str:
+    plaintext = private_key.decrypt(
+        base64.b64decode(encrypted),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        ),
+    )
+    return plaintext.decode()
 
 
 def recv_exact(conn: socket.socket, n: int) -> bytes:
@@ -85,10 +106,10 @@ def authenticate_user(args: dict) -> bool:
             return False
         if username not in login_info.user_hash:
             logging.warning(f"{username = } {password = }")
-            hashlib.scrypt(password.encode(), salt=os.urandom(16), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P)
+            hashlib.scrypt(decrypt(password).encode(), salt=os.urandom(16), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P)
             return False
         logging.warning(f"{username = } {password = }")
-        return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(password.encode(), salt=bytes.fromhex(login_info.user_hash[username]["salt"]), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
+        return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(decrypt(password).encode(), salt=bytes.fromhex(login_info.user_hash[username]["salt"]), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
     except Exception as e: 
         logging.warning(e)
         return False

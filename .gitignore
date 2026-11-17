@@ -3,3 +3,4 @@
 .users
 __pycache__
 server/src/storage
+private_key.pem
