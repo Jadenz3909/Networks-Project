@@ -245,6 +245,7 @@ COMMANDS = {
 def main():
     sock = None
     while True:
+        show_commands()
         line = input("> ").strip()
         if not line:
             continue
