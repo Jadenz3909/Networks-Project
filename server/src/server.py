@@ -102,13 +102,12 @@ def authenticate_user(args: dict) -> bool:
             logging.warning("username or password field messed up")
             return False
         if not (isinstance(username, str) and isinstance(password, str)):
-            logging.warning(f"{username = } {password = }")
+            logging.warning(f"{username = } {decrypt(password) = }")
             return False
         if username not in login_info.user_hash:
-            logging.warning(f"{username = } {password = }")
+            logging.warning(f"{username = } {decrypt(password) = }")
             hashlib.scrypt(decrypt(password).encode(), salt=os.urandom(16), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P)
             return False
-        logging.warning(f"{username = } {password = }")
         return hmac.compare_digest(bytes.fromhex(login_info.user_hash[username]["hash"]), hashlib.scrypt(decrypt(password).encode(), salt=bytes.fromhex(login_info.user_hash[username]["salt"]), n=SCRYPT_PARAMS.N, r=SCRYPT_PARAMS.R, p=SCRYPT_PARAMS.P))
     except Exception as e: 
         logging.warning(e)
