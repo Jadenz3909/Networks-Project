@@ -244,8 +244,8 @@ COMMANDS = {
 #runs our primary functions once connection is established
 def main():
     sock = None
+    print("Type 'help' to pull up commands")
     while True:
-        show_commands()
         line = input("> ").strip()
         if not line:
             continue
@@ -254,6 +254,8 @@ def main():
 
         if cmd == "quit":
             break
+        elif cmd == "help":
+            show.commands()
         elif cmd == "connect":
             sock = do_connect(args)
         elif cmd not in COMMANDS:
