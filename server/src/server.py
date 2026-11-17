@@ -243,7 +243,7 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
             print()
         buf = conn.recv(40000)
         recv_hash = buf
-        while buf.endswith(b"\n"):
+        while not buf.endswith(b"\n"):
             buf = conn.recv(40000)
             recv_hash += buf
         if not hmac.compare_digest(recv_hash.strip(), local_hash.hexdigest().encode()):
