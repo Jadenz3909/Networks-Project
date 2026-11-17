@@ -5,10 +5,42 @@ import os
 import posixpath
 import socket
 import time
+import base64
+
+# encryption using RSA
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+# opens the public key from the folder
+with open("public_key.pem", "rb") as f:
+    _loaded = serialization.load_pem_public_key(f.read())
+
+# checks that it is an RSA key
+if not isinstance(_loaded, rsa.RSAPublicKey):
+    raise TypeError("public_key.pem is not an RSA public key")
+
+public_key = _loaded
+
+# the encryption happens here and this is where it is padded
+# base64 converts it back it letters and digits for the json
+def encrypt(password: str) -> str:
+    ciphertext = public_key.encrypt(
+        password.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return base64.b64encode(ciphertext).decode()
+
 
 CHUNK_SIZE = 256 * 1024
+# donload save location
 DOWNLOAD_DIR = "downloads"
+# size of file transfers
 UPLOAD_CHUNK = 40000
+# bytes to MB
 MB = 1_048_576
 
 ERRORS = {
@@ -20,12 +52,15 @@ ERRORS = {
     500: "server error",
 }
 
+# looks up error codes
 def print_error(code):
     print(f"Error {code}: {ERRORS.get(code, 'unexpected reply')}")
 
+# adds the new line as it sends everything out
 def send_request(sock, fields):
     sock.sendall((json.dumps(fields) + "\n").encode())
 
+# reads exactly n bytes
 def recv_exact(sock, n):
     data = b""
     while len(data) < n:
@@ -35,9 +70,11 @@ def recv_exact(sock, n):
         data += chunk
     return data
 
+# reads the codes
 def recv_code(sock):
     return int(recv_exact(sock, 3))
 
+# reads the entire line for dir
 def recv_line(sock):
     data = b""
     while not data.endswith(b"\n"):
@@ -46,26 +83,30 @@ def recv_line(sock):
 
 # allows you to enter IP and port, then connect to it
 def do_connect(args):
+    # takes the 2 arguments after connect
     if len(args) != 2 or not args[1].isdigit():
         print("Usage: connect <ip> <port>")
         return None
     ip, port = args[0], int(args[1])
     
+    #asks for user logins
     username = input("Username: ").strip()
     password = getpass.getpass("Password: ")
 
     try:
+        #opens the TCP connection
         sock = socket.create_connection((ip, port), timeout=5)
-        sock.sendall(json.dumps({"username": username, "password": password}).encode())
+        sock.sendall(json.dumps({"username": username, "password": encrypt(password)}).encode())
         code = recv_code(sock)
     except OSError as e:
         print(f"Could not connect: {e}")
         return None
-
+    # if something other 200 is sent, login failed
     if code != 200:
         print_error(code)
         sock.close()
         return None
+    # connected and no timeout
     sock.settimeout(None)   
     print(f"Connected to {ip}:{port} as {username}")
     return sock
@@ -73,15 +114,19 @@ def do_connect(args):
 #sends a directory request to the server and reports back files
 def do_dir(sock, args):
     directory = args[0] if args else "/"
+    # sends the request
     send_request(sock, {"cmd": "dir", "dir": directory})
+    #check for 200
     code = recv_code(sock)
     if code != 200:
         print_error(code)
         return
 
-    entries = json.loads(recv_line(sock))    # {"name": "f" or "d", ...}
+    # read the entry
+    entries = json.loads(recv_line(sock))    
     if not entries:
         print("  (empty)")
+        # prints each item
     for name, kind in sorted(entries.items()):
         label = "[folder]" if kind == "d" else "[file]  "
         print(f"  {label}  {name}")
@@ -164,7 +209,7 @@ def do_upload(sock, args):
                 return
 
     # send SHA - 256 to server to make sure file is unchanged
-    sock.sendall(sha.hexdigest().encode())
+    sock.sendall((sha.hexdigest() + "\n").encode())
     code = recv_code(sock)
     seconds = time.perf_counter() - start
     if code != 201:
@@ -204,7 +249,7 @@ def do_download(sock, args):
     start = time.perf_counter()
     with open(local_path, "wb") as f:
         while received < size:
-            chunk = sock.recv(min(UPLOAD_CHUNK, size - received))
+            chunk = recv_exact(sock, min(UPLOAD_CHUNK, size - received))
             if not chunk:
                 raise ConnectionError("the server closed the connection")
             f.write(chunk)
@@ -255,7 +300,7 @@ def main():
         if cmd == "quit":
             break
         elif cmd == "help":
-            show.commands()
+            show_commands()
         elif cmd == "connect":
             sock = do_connect(args)
         elif cmd not in COMMANDS:
