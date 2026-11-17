@@ -210,6 +210,7 @@ def do_download(sock, args):
             f.write(chunk)
             sha.update(chunk)
             received += len(chunk)
+            sock.sendall(b"100")
 
             percent = received * 100 // size
             if percent != shown:
