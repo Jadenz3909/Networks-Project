@@ -203,7 +203,7 @@ def do_download(sock, args):
     start = time.perf_counter()
     with open(local_path, "wb") as f:
         while received < size:
-            chunk = sock.recv(min(CHUNK_SIZE, size - received))
+            chunk = sock.recv(min(UPLOAD_CHUNK, size - received))
             if not chunk:
                 raise ConnectionError("the server closed the connection")
             f.write(chunk)
