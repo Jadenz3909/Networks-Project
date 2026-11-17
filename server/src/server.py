@@ -16,10 +16,11 @@ def recv_exact(conn: socket.socket, n: int) -> bytes:
     buf = bytearray(n)
     view = memoryview(buf)
     bytes_read = 0
-    while bytes_read < 3:
+    while bytes_read < n:
         received = conn.recv_into(view[bytes_read:])
         if received == 0:
             raise OSError
+        bytes_read += received
     return bytes(buf)
 
 
@@ -224,6 +225,7 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
         fd, tmp_name = tempfile.mkstemp(suffix=".tmp", prefix=".upload_", dir=TMP)
         tmp_path = Path(tmp_name)
         local_hash = hashlib.sha256()
+        clear_recv_times(addr)
         with os.fdopen(fd, "wb") as file:
             start_time = time.monotonic()
             while bytes_received < file_size:
@@ -237,7 +239,8 @@ def receive_file(conn: socket.socket, addr: tuple, file_path: Path, file_size: i
                 bytes_received += len(buf)
                 conn.sendall(b"100")
                 add_recv_time(addr, start_time, time.monotonic())
-                print(f"\rSend Progress: {round(get_data_recv(addr)/file_size, 1):%} Throughput: {calc_recv_throughput(addr)}", end="", flush=True)
+                print(f"\rReceive Progress: {get_data_recv(addr)/file_size:.1%} Throughput: {calc_recv_throughput(addr)}", end="", flush=True)
+            print()
         buf = conn.recv(40000)
         recv_hash = buf
         while buf.endswith(b"\n"):
@@ -421,15 +424,21 @@ def send_file(conn: socket.socket, addr: tuple, path: Path) -> bool:
     try:
         logging.info(f"sending file at {path = } to client {addr = }")
         with open(path, "rb") as file:
-            conn.sendfile(file)
+            sent = 0
+            start_time = time.monotonic()
+            clear_send_times(addr)
+            while chunk := file.read(40000):
+                conn.sendall(chunk)
+                add_send_time(addr, start_time, time.monotonic())
+                sent += len(chunk)
+                print(f"\rSend Progress: {get_data_sent(addr)/path.stat().st_size:.1%} Throughput: {calc_send_throughput(addr)}", end="", flush=True)
+            print()
             file.seek(0)
             digest = hashlib.file_digest(file, "sha256").hexdigest().encode()
         conn.sendall(digest)
-        clear_send_times(addr)
-        start_time = time.monotonic()
-        while (code := recv_exact(conn, 3)) == b"100":
-            add_send_time(addr, start_time, time.monotonic())
-            print(f"\rSend Progress: {round(get_data_sent(addr)/path.stat().st_size, 1):%} Throughput: {calc_send_throughput(addr)}", end="", flush=True)
+        code = recv_exact(conn, 3)
+        while code == b"100":
+            code = recv_exact(conn, 3)
         if code != b"200":
             logging.warning("file send failed")
         else: logging.info(f"sent file at {path = } to client {addr = }")
